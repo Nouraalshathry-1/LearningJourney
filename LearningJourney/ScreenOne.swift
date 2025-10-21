@@ -1,13 +1,12 @@
 //
-//  ContentView.swift
+//  ScreenOne.swift
 //  LearningJourney
 //
-//  Created by Noura Alshathry on 16/10/2025.
+//  Created by Noura Alshathry on 21/10/2025.
 //
 
 import SwiftUI
-
-struct ContentView: View {
+struct ScreenOne: View {
     @StateObject private var vm = ActivityViewModel()
 
     @State private var topic: String = ""
@@ -169,6 +168,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ScreenOne()
         .environmentObject(ActivityViewModel())
 }
+

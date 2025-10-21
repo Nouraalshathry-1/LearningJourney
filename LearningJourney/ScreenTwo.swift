@@ -14,14 +14,13 @@ extension Color {
     static let bg       = Color.black
     static let card     = Color(white: 0.12)
     static let stroke   = Color.white.opacity(0.08)
-    static let learned  = Color(hex: "#FF9230")   // orange (learned)
-    static let frozen   = Color(hex: "#3CD3FE")   // cyan (frozen & selected day)
-    static let selected = Color(hex: "#FF9230")   // primary CTA orange
-    static let freezeBtn = Color(hex: "#00D2E0")  // Log as Freezed button
+    static let learned  = Color(hex: "#FF9230")
+    static let frozen   = Color(hex: "#3CD3FE")
+    static let selected = Color(hex: "#FF9230")
+    static let freezeBtn = Color(hex: "#00D2E0")
     static let label    = Color.white
 }
 
-// Hex init
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -47,7 +46,6 @@ final class ActivityViewModel: ObservableObject {
     enum QuotaMode { case week }
     @Published var quotaMode: QuotaMode = .week
 
-    // Current period window for week quota (Sunday start)
     var periodRange: (start: Date, end: Date) {
         let now = Date()
         let start = cal.dateInterval(of: .weekOfYear, for: now)!.start
@@ -56,21 +54,19 @@ final class ActivityViewModel: ObservableObject {
     }
 
     var periodFreezeLimit: Int { 2 }
-
+    
     let maxFreezesPerMonth = 8
     private let cal = Calendar.current
 
     init() {
         load()
-        // Ensure selection is visible month
         month = beginningOfMonth(for: selectedDay)
     }
 
-    // Days to render including leading blanks
     var daysGrid: [Date?] {
         let start = beginningOfMonth(for: month)
         let range = cal.range(of: .day, in: .month, for: start)!
-        let firstWeekdayIndex = (cal.component(.weekday, from: start) + 6) % 7 // 0=Sun → 0..6
+        let firstWeekdayIndex = (cal.component(.weekday, from: start) + 6) % 7
         let blanks = Array(repeating: Optional<Date>.none, count: firstWeekdayIndex)
         let days = range.compactMap { day -> Date? in
             cal.date(byAdding: .day, value: day - 1, to: start)
@@ -78,10 +74,10 @@ final class ActivityViewModel: ObservableObject {
         return blanks + days
     }
 
-    // Week strip for the selected day (SUN..SAT)
+  
     func weekDays(containing date: Date) -> [Date] {
         let startOfDay = cal.startOfDay(for: date)
-        let weekday = cal.component(.weekday, from: startOfDay) // 1=Sun
+        let weekday = cal.component(.weekday, from: startOfDay)
         let sunday = cal.date(byAdding: .day, value: -(weekday - 1), to: startOfDay) ?? startOfDay
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: sunday) }
     }
@@ -153,10 +149,8 @@ final class ActivityViewModel: ObservableObject {
         save()
     }
 
-    // Streak: consecutive days up to today where state is learned or frozen.
     var streakCount: Int {
         let today = cal.startOfDay(for: Date())
-        // Hard 32-hour expiration based on last activity timestamp
         if let last = lastLogAt, Date().timeIntervalSince(last) > 32 * 3600 {
             return 0
         }
@@ -223,6 +217,11 @@ struct ScreenTwo: View {
     let weekdayShort = ["SUN","MON","TUE","WED","THU","FRI","SAT"]
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
+    // Month/Year wheel picker state
+    @State private var showingMonthPicker = false
+    @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -242,17 +241,67 @@ struct ScreenTwo: View {
             .padding(.vertical, 12)
         }
         .background(Color.bg.ignoresSafeArea())
+        .sheet(isPresented: $showingMonthPicker) {
+            VStack(spacing: 12) {
+                Text("Select Month & Year")
+                    .font(.headline)
+                    .padding(.top, 8)
+
+                HStack(spacing: 0) {
+                    // Month wheel
+                    Picker("Month", selection: $pickerMonth) {
+                        ForEach(1...12, id: \.self) { m in
+                            Text(monthName(m))
+                                .tag(m)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.wheel)
+
+                    // Year wheel (current year - 20 .. current year + 5)
+                    Picker("Year", selection: $pickerYear) {
+                        ForEach(yearsRange(), id: \.self) { y in
+                            Text(verbatim: String(y)).tag(y)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.wheel)
+                }
+                .frame(maxHeight: 220)
+
+                Button {
+                    // Apply selection -> jump to first day of chosen month
+                    var comp = DateComponents()
+                    comp.year = pickerYear
+                    comp.month = pickerMonth
+                    comp.day = 1
+                    if let d = Calendar.current.date(from: comp) {
+                        let start = Calendar.current.startOfDay(for: d)
+                        vm.selectedDay = start
+                        vm.month = start
+                    }
+                    showingMonthPicker = false
+                } label: {
+                    Text("Done")
+                        .font(.headline)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.selected))
+                        .foregroundColor(.white)
+                }
+                .padding(.bottom, 12)
+            }
+            .presentationDetents([.height(340)])
+        }
         .preferredColorScheme(.dark)
         .navigationBarHidden(true)
         .onReceive(minuteTimer) { now in
-            // If the day changed, reselect today so CTAs enable at 12AM
             if !Calendar.current.isDate(vm.selectedDay, inSameDayAs: now) {
                 vm.select(now)
             }
         }
     }
 
-    // Title + icons
     private var headerBar: some View {
         HStack {
             Text("Activity")
@@ -268,20 +317,31 @@ struct ScreenTwo: View {
         }
     }
 
-    // Calendar Card
     private var calendarCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(vm.monthTitle.uppercased())
-                    .font(.headline)
-                    .foregroundColor(.label)
+                Button {
+                    // seed picker with current selected month/year
+                    let comp = Calendar.current.dateComponents([.year, .month], from: vm.selectedDay)
+                    pickerMonth = comp.month ?? pickerMonth
+                    pickerYear  = comp.year  ?? pickerYear
+                    showingMonthPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(vm.monthTitle.uppercased())
+                            .font(.headline)
+                            .foregroundColor(.label)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.label.opacity(0.9))
+                    }
+                }
                 Spacer()
                 Button(action: vm.prevWeek) { Image(systemName: "chevron.left") }
                 Button(action: vm.nextWeek) { Image(systemName: "chevron.right") }
             }
             .foregroundColor(.label)
 
-            // Weekday headers
             HStack {
                 ForEach(weekdayShort, id: \.self) { w in
                     Text(w)
@@ -291,7 +351,6 @@ struct ScreenTwo: View {
                 }
             }
 
-            // One-week strip (SUN..SAT)
             HStack(spacing: 12) {
                 ForEach(vm.weekDays(containing: vm.selectedDay), id: \.self) { date in
                     Button { vm.select(date) } label: {
@@ -364,7 +423,6 @@ struct ScreenTwo: View {
         .buttonStyle(.plain)
     }
 
-    // Metrics row
     private var metricsSection: some View {
         HStack(spacing: 14) {
             metricCard(icon: "flame.fill", value: vm.learnedCountThisWeek, noun: "Learned")
@@ -391,7 +449,6 @@ struct ScreenTwo: View {
         )
     }
 
-    // Big round primary CTA
     private var primaryCTA: some View {
         let state = vm.state(for: vm.selectedDay)
         let enabled = (state == .none) && Calendar.current.isDateInToday(vm.selectedDay)
@@ -413,7 +470,6 @@ struct ScreenTwo: View {
                         )
                     )
 
-                // Title text per state
                 VStack(spacing: 6) {
                     if state == .none {
                         Text("Log as")
@@ -440,7 +496,6 @@ struct ScreenTwo: View {
         .padding(.top, 6)
     }
 
-    // Secondary CTA
     private var secondaryCTA: some View {
         let state = vm.state(for: vm.selectedDay)
         let canFreeze = (state == .none) && vm.freezesLeft > 0 && Calendar.current.isDateInToday(vm.selectedDay)
@@ -477,3 +532,13 @@ struct ScreenTwo: View {
             .environmentObject(ActivityViewModel())
     }
 }
+
+    private func monthName(_ m: Int) -> String {
+        let f = DateFormatter()
+        return f.monthSymbols[(max(1, min(12, m)) - 1)]
+    }
+
+    private func yearsRange() -> [Int] {
+        let current = Calendar.current.component(.year, from: Date())
+        return Array((current - 20)...(current + 5))
+    }
