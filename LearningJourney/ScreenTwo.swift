@@ -37,14 +37,15 @@ extension Color {
 // MARK: - Model
 enum DayState: String, Codable { case none, learned, frozen }
 
-final class ActivityViewModel: ObservableObject {
-    @Published var month: Date = Date()
-    @Published var selectedDay: Date = Calendar.current.startOfDay(for: Date())
-    @Published var logs: [Date: DayState] = [:]
-    @Published var lastLogAt: Date? = nil
+@Observable
+final class ActivityViewModel {
+    var month: Date = Date()
+    var selectedDay: Date = Calendar.current.startOfDay(for: Date())
+    var logs: [Date: DayState] = [:]
+    var lastLogAt: Date? = nil
 
     enum QuotaMode { case week }
-    @Published var quotaMode: QuotaMode = .week
+    var quotaMode: QuotaMode = .week
 
     var periodRange: (start: Date, end: Date) {
         let now = Date()
@@ -212,7 +213,7 @@ final class ActivityViewModel: ObservableObject {
 
 // MARK: - View
 struct ScreenTwo: View {
-    @EnvironmentObject var vm: ActivityViewModel
+    @Environment(\.activityVM) var vm
 
     let weekdayShort = ["SUN","MON","TUE","WED","THU","FRI","SAT"]
     private let minuteTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
@@ -529,7 +530,7 @@ struct ScreenTwo: View {
 #Preview {
     NavigationStack {
         ScreenTwo()
-            .environmentObject(ActivityViewModel())
+            .environment(\.activityVM, ActivityViewModel())
     }
 }
 

@@ -5,9 +5,33 @@
 //  Created by Noura Alshathry on 21/10/2025.
 //
 
+
 import SwiftUI
+
+// MARK: - Environment key for ActivityViewModel (iOS 17 style)
+private struct ActivityViewModelKey: EnvironmentKey {
+    static let defaultValue: ActivityViewModel = ActivityViewModel()
+}
+
+extension EnvironmentValues {
+    var activityVM: ActivityViewModel {
+        get { self[ActivityViewModelKey.self] }
+        set { self[ActivityViewModelKey.self] = newValue }
+    }
+}
+
+extension ActivityViewModel {
+    /// Clears all activity so a new or changed goal starts fresh.
+    func resetForNewGoal() {
+        logs.removeAll()
+        lastLogAt = nil
+        // Clear persisted state as well
+        UserDefaults.standard.removeObject(forKey: "activity.logs")
+        UserDefaults.standard.removeObject(forKey: "activity.lastLogAt")
+    }
+}
 struct ScreenOne: View {
-    @StateObject private var vm = ActivityViewModel()
+    @State private var vm = ActivityViewModel()
 
     @State private var topic: String = ""
     @State private var selectedDuration: LearningDuration = .week
@@ -117,13 +141,12 @@ struct ScreenOne: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
             .background(Color.black.ignoresSafeArea())
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $navigate) {
                 ScreenTwo()
-                    .environmentObject(vm)
             }
         }
-        .environmentObject(vm)
+        .environment(\.activityVM, vm)
         .preferredColorScheme(.dark)
     }
 
@@ -153,22 +176,26 @@ struct ScreenOne: View {
     }
 
     private func persistSelections() {
-        UserDefaults.standard.set(topic, forKey: "activity.goalTitle")
-        UserDefaults.standard.set(selectedDuration.rawValue.lowercased(), forKey: "activity.duration")
+        let previousTitle = UserDefaults.standard.string(forKey: "activity.goalTitle") ?? ""
+        let previousDuration = UserDefaults.standard.string(forKey: "activity.duration") ?? "week"
+        let newTitle = topic
+        let newDuration = selectedDuration.rawValue.lowercased()
 
-        switch selectedDuration {
-        case .week:
-            vm.quotaMode = .week
-        case .month:
-            vm.quotaMode = .week
-        case .year:
-            vm.quotaMode = .week
+        // If the learning goal or duration changes, reset streak/logs per spec.
+        if previousTitle != newTitle || previousDuration != newDuration {
+            vm.resetForNewGoal()
         }
+
+        UserDefaults.standard.set(newTitle, forKey: "activity.goalTitle")
+        UserDefaults.standard.set(newDuration, forKey: "activity.duration")
+
+        // Current app logic: week quota; can be expanded later.
+        vm.quotaMode = .week
     }
 }
 
 #Preview {
     ScreenOne()
-        .environmentObject(ActivityViewModel())
+        .environment(\.activityVM, ActivityViewModel())
 }
 
