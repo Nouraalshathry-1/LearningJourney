@@ -34,8 +34,18 @@ struct ScreenOne: View {
     @State private var vm = ActivityViewModel()
 
     @State private var topic: String = ""
-    @State private var selectedDuration: LearningDuration = .week
+    @State private var selectedDuration: LearningDuration? = nil
     @State private var navigate = false
+
+    @State private var attempted = false
+
+    private let flameCircleSize: CGFloat = 109     // matches visual spec
+    private let chipSize = CGSize(width: 97, height: 48)   // Week/Month/Year
+    private let startSize = CGSize(width: 182, height: 48) // Start learning
+
+    private var isTopicValid: Bool { !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var isDurationValid: Bool { selectedDuration != nil }
+    private var formValid: Bool { isTopicValid && isDurationValid }
 
     private enum LearningDuration: String, CaseIterable, Identifiable {
         case week = "Week"
@@ -45,11 +55,11 @@ struct ScreenOne: View {
     }
 
     private enum Palette {
-        static let orange = Color(hex: "#FF9230")
-        static let card   = Color(white: 0.12)
-        static let stroke = Color.white.opacity(0.10)
+        static let orange = Color("AppPrimary")            // primary orange
+        static let chipBG = Color("AppSecondary")            // unselected chip background
+        static let stroke = Color.white.opacity(0.15)         // hairline strokes
         static let label  = Color.white
-        static let sub    = Color.white.opacity(0.7)
+        static let sub    = Color(hex: "#8E8E93")            // iOS placeholder grey
     }
 
     var body: some View {
@@ -58,18 +68,17 @@ struct ScreenOne: View {
 
                 ZStack {
                     Circle()
-                        .fill(Color.black.opacity(0.25))
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                        .frame(width: 96, height: 96)
-                        .overlay(
-                            Circle().stroke(Palette.orange.opacity(0.7), lineWidth: 1)
-                        )
-                        .shadow(color: Palette.orange.opacity(0.25), radius: 22, x: 0, y: 8)
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 34, weight: .bold))
-                        .foregroundColor(Palette.orange)
+                        .glassEffect(.clear.tint(.appCircle))
+                        .frame(width: flameCircleSize, height: flameCircleSize)
+                        .allowsHitTesting(false)
+
+                    Image("flame")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: flameCircleSize * 0.36, height: flameCircleSize * 0.36)
                 }
+             
+                
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 16)
 
@@ -83,12 +92,21 @@ struct ScreenOne: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("I want to learn")
-                        .foregroundColor(Palette.label)
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Text("I want to learn")
+                            .foregroundColor(Palette.label)
+                            .font(.headline)
+                        if attempted && !isTopicValid {
+                            Text("*")
+                                .font(.headline)
+                                .foregroundColor(.red)
+                                .accessibilityLabel("Required field")
+                        }
+                    }
 
-                    TextField("Swift", text: $topic)
-                        .foregroundColor(Palette.sub)
+                    TextField(text: $topic, prompt: Text("Swift").foregroundColor(Palette.sub)) { EmptyView() }
+                        .foregroundStyle(Palette.orange)
+                        .tint(.gray)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
 
@@ -98,9 +116,17 @@ struct ScreenOne: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("I want to learn it in a")
-                        .foregroundColor(Palette.label)
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Text("I want to learn it in a")
+                            .foregroundColor(Palette.label)
+                            .font(.headline)
+                        if attempted && !isDurationValid {
+                            Text("*")
+                                .font(.headline)
+                                .foregroundColor(.red)
+                                .accessibilityLabel("Required field")
+                        }
+                    }
 
                     HStack(spacing: 12) {
                         chip(.week)
@@ -115,28 +141,24 @@ struct ScreenOne: View {
                 HStack {
                     Spacer()
                     Button {
+                        attempted = true
+                        guard formValid else { return }
                         persistSelections()
                         navigate = true
                     } label: {
                         Text("Start learning")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(width: 240)
-                            .padding(.vertical, 10)
-                            .background(
-                                Capsule()
-                                    .fill(Palette.orange.opacity(0.45))
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(Capsule())
-                            )
-                            .overlay(
-                                Capsule().stroke(Palette.orange.opacity(0.9), lineWidth: 1)
-                            )
-                            .shadow(color: Palette.orange.opacity(0.25), radius: 10, x: 0, y: 4)
+                            .glassEffect(.clear.tint(.appPrimary))
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 182, height: 48)
+                            .foregroundStyle(.white)
                     }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
                     Spacer()
                 }
 
+
+                
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
@@ -152,34 +174,28 @@ struct ScreenOne: View {
 
     @ViewBuilder
     private func chip(_ value: LearningDuration) -> some View {
+        let selected = (value == selectedDuration)
         Button {
-            selectedDuration = value
+            selectedDuration = value; attempted = false
         } label: {
             Text(value.rawValue)
-                .font(.callout.weight(.semibold))
-                .foregroundColor(.white)
-                .padding(.vertical, 8)
-                .padding(.horizontal, 14)
-                .background(
-                    Capsule()
-                        .fill(value == selectedDuration ? Palette.orange.opacity(0.85) : Color.black.opacity(0.22))
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(Palette.stroke, lineWidth: value == selectedDuration ? 0 : 1)
-                )
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 80, height: 40)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(value.rawValue) duration")
+        .buttonStyle(.glassProminent)
+        .tint(selected ? Palette.orange : Color.clear)
+        .frame(width: chipSize.width, height: chipSize.height)
+        .buttonBorderShape(.capsule)
     }
 
+    // Saves topic and duration for later use in the app
     private func persistSelections() {
+        guard isTopicValid, let duration = selectedDuration else { return }
         let previousTitle = UserDefaults.standard.string(forKey: "activity.goalTitle") ?? ""
         let previousDuration = UserDefaults.standard.string(forKey: "activity.duration") ?? "week"
         let newTitle = topic
-        let newDuration = selectedDuration.rawValue.lowercased()
+        let newDuration = duration.rawValue.lowercased()
 
         // If the learning goal or duration changes, reset streak/logs per spec.
         if previousTitle != newTitle || previousDuration != newDuration {
@@ -198,4 +214,3 @@ struct ScreenOne: View {
     ScreenOne()
         .environment(\.activityVM, ActivityViewModel())
 }
-
