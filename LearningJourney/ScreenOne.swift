@@ -58,7 +58,8 @@ struct ScreenOne: View {
 
                 ZStack {
                     Circle()
-                        .glassEffect(.clear)
+                        .glassEffect(.clear, in: .circle)
+                        
                         .frame(width: flameCircleSize, height: flameCircleSize)
                         .allowsHitTesting(false)
 
@@ -71,28 +72,30 @@ struct ScreenOne: View {
                 
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 16)
-
+                
+                
+                
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Hello Learner")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(Palette.label)
-                    Text("This app will help you learn everyday!")
-                        .foregroundColor(Palette.sub)
-                        .font(.footnote)
-                }
+                                 Text("Hello Learner")
+                                     .font(.system(size: 28, weight: .bold))
+                                     .foregroundColor(Palette.label)
+                                 Text("This app will help you learn everyday!")
+                                     .foregroundColor(Palette.sub)
+                                     .font(.footnote)
+                             }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 6) {
-                        Text("I want to learn")
-                            .foregroundColor(Palette.label)
-                            .font(.headline)
-                        if attempted && !isTopicValid {
-                            Text("*")
-                                .font(.headline)
-                                .foregroundColor(.red)
-                                .accessibilityLabel("Required field")
-                        }
-                    }
+                       VStack(alignment: .leading, spacing: 10) {
+                          HStack(spacing: 6) {
+                              Text("I want to learn")
+                                .foregroundColor(Palette.label)
+                               .font(.headline)
+                           if attempted && !isTopicValid {
+                                Text("*")
+                               .font(.headline)
+                               .foregroundColor(.red)
+                               .accessibilityLabel("Required field")
+                                     }
+                                 }
 
                     TextField(text: $topic, prompt: Text("Swift").foregroundColor(Palette.sub)) { EmptyView() }
                         .foregroundStyle(Palette.orange)
@@ -137,12 +140,13 @@ struct ScreenOne: View {
                         navigate = true
                     } label: {
                         Text("Start learning")
-                            .glassEffect(.clear.tint(.appPrimary))
                             .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 182, height: 48)
+                            .frame(width: startSize.width, height: startSize.height)
                             .foregroundStyle(.white)
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.glassProminent)
+                    .glassEffect(.regular, in: .capsule)
+                    .tint(Palette.orange)
                     .buttonBorderShape(.capsule)
                     Spacer()
                 }
@@ -166,16 +170,17 @@ struct ScreenOne: View {
     private func chip(_ value: LearningDuration) -> some View {
         let selected = (value == selectedDuration)
         Button {
-            selectedDuration = value; attempted = false
+            selectedDuration = value
+            attempted = false
         } label: {
             Text(value.rawValue)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 80, height: 40)
+                .frame(width: chipSize.width, height: chipSize.height)
         }
         .buttonStyle(.glassProminent)
-        .tint(selected ? Palette.orange : Color.clear)
-        .frame(width: chipSize.width, height: chipSize.height)
+        .glassEffect(.regular, in: .capsule)
+        .tint(selected ? Palette.orange : .clear)
         .buttonBorderShape(.capsule)
     }
 
