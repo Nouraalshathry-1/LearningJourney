@@ -18,8 +18,7 @@ private enum Palette {
 
 
 extension Color {
-    static let card = Color(white: 0.12)
-
+    static let card: Color = Color.clear
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0; Scanner(string: hex).scanHexInt64(&int)
@@ -280,8 +279,6 @@ struct ScreenTwo: View {
 
                 calendarCard
 
-                metricsSection
-
                 primaryCTA
 
                 secondaryCTA
@@ -404,7 +401,13 @@ struct ScreenTwo: View {
                 }
                 Spacer()
                 Button(action: vm.prevWeek) { Image(systemName: "chevron.left") }
+                    .buttonStyle(.glass)
+                    .glassEffect(.regular, in: .circle)
+                    .tint(.appPrimary)
                 Button(action: vm.nextWeek) { Image(systemName: "chevron.right") }
+                    .buttonStyle(.glass)
+                    .glassEffect(.regular, in: .circle)
+                    .tint(.appPrimary)
             }
             .foregroundColor(Palette.label)
 
@@ -451,9 +454,16 @@ struct ScreenTwo: View {
 
             Divider().background(Palette.stroke)
 
-            Text("Learning Activity")
-                .font(.subheadline)
-                .foregroundColor(Palette.label)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Learning Activity")
+                    .font(.subheadline)
+                    .foregroundColor(Palette.label)
+
+                HStack(spacing: 12) {
+                    metricBadge(bg: .appCircle, icon: "flame.fill", value: vm.learnedCountThisWeek, label: "Days Learned")
+                    metricBadge(bg: .appCon, icon: "cube.fill", value: vm.frozenCountThisPeriod, label: "Days Freezed", iconColor: .appCon)
+                }
+            }
         }
         .padding(14)
         .background(
@@ -531,15 +541,8 @@ struct ScreenTwo: View {
             .contentShape(Circle())
         }
         .buttonStyle(.glass)
-        .glassEffect(.regular.interactive(), in: Circle())
+        .glassEffect(.regular, in: Circle())
         .tint(.appPrimary)
-        .overlay(
-            Circle().stroke(
-                state == .learned ? Color.appPrimary.opacity(0.9) :
-                state == .frozen  ? Color.appSecondary.opacity(0.9) :
-                Color.white.opacity(0.18), lineWidth: 2
-            ).frame(width: 270, height: 270)
-        )
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.95)
         .frame(maxWidth: .infinity, alignment: .center)
@@ -589,4 +592,23 @@ struct ScreenTwo: View {
     private func yearsRange() -> [Int] {
         let current = Calendar.current.component(.year, from: Date())
         return Array((current - 20)...(current + 5))
+    }
+
+    // Helper for colored metric badges in calendarCard
+    private func metricBadge(bg: Color, icon: String, value: Int, label: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.title3).foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(value)").font(.headline.weight(.bold)).foregroundStyle(.white)
+                Text("\(value == 1 ? "Day" : "Days") \(label.split(separator: " ").last!)")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            Capsule().fill(bg)
+        )
     }
