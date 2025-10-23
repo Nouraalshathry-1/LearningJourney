@@ -20,16 +20,6 @@ extension EnvironmentValues {
     }
 }
 
-extension ActivityViewModel {
-    /// Clears all activity so a new or changed goal starts fresh.
-    func resetForNewGoal() {
-        logs.removeAll()
-        lastLogAt = nil
-        // Clear persisted state as well
-        UserDefaults.standard.removeObject(forKey: "activity.logs")
-        UserDefaults.standard.removeObject(forKey: "activity.lastLogAt")
-    }
-}
 struct ScreenOne: View {
     @State private var vm = ActivityViewModel()
 
@@ -68,7 +58,7 @@ struct ScreenOne: View {
 
                 ZStack {
                     Circle()
-                        .glassEffect(.clear.tint(.appCircle))
+                        .glassEffect(.clear)
                         .frame(width: flameCircleSize, height: flameCircleSize)
                         .allowsHitTesting(false)
 

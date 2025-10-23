@@ -7,21 +7,19 @@
 
 import SwiftUI
 import Combine
+import Observation
 
-
-// MARK: - Colors (tweak to your palette)
-extension Color {
-    static let bg       = Color.black
-    static let card     = Color(white: 0.12)
-    static let stroke   = Color.white.opacity(0.08)
-    static let learned  = Color(hex: "#FF9230")
-    static let frozen   = Color(hex: "#3CD3FE")
-    static let selected = Color(hex: "#FF9230")
-    static let freezeBtn = Color(hex: "#00D2E0")
-    static let label    = Color.white
+private enum Palette {
+    static let bg = Color.black
+    static let card = Color(white: 0.12)
+    static let stroke = Color.white.opacity(0.08)
+    static let label = Color.white
 }
 
+
 extension Color {
+    static let card = Color(white: 0.12)
+
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0; Scanner(string: hex).scanHexInt64(&int)
@@ -41,7 +39,8 @@ enum DayState: String, Codable { case none, learned, frozen }
 final class ActivityViewModel {
     var month: Date = Date()
     var selectedDay: Date = Calendar.current.startOfDay(for: Date())
-    var logs: [Date: DayState] = [:]
+    // Use string-keyed logs
+    var logsByKey: [String: DayState] = [:]
     var lastLogAt: Date? = nil
 
     enum QuotaMode { case week }
@@ -59,9 +58,29 @@ final class ActivityViewModel {
     let maxFreezesPerMonth = 8
     private let cal = Calendar.current
 
+    // Formatter for day keys ("yyyy-MM-dd")
+    private let dayKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = .current
+        f.timeZone = .current
+        f.locale   = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private func dayKey(for date: Date) -> String {
+        dayKeyFormatter.string(from: Calendar.current.startOfDay(for: date))
+    }
+
+    private func date(fromDayKey key: String) -> Date? {
+        guard let d = dayKeyFormatter.date(from: key) else { return nil }
+        return Calendar.current.startOfDay(for: d)
+    }
+
     init() {
         load()
         month = beginningOfMonth(for: selectedDay)
+        ensureFreshAfterFirstGoal()
     }
 
     var daysGrid: [Date?] {
@@ -84,22 +103,32 @@ final class ActivityViewModel {
     }
 
     var learnedCountThisMonth: Int {
-        monthDates.compactMap { logs[$0] == .learned ? 1 : nil }.count
+        monthDates.compactMap { state(for: $0) == .learned ? 1 : nil }.count
     }
     var frozenCountThisMonth: Int {
-        monthDates.compactMap { logs[$0] == .frozen ? 1 : nil }.count
+        monthDates.compactMap { state(for: $0) == .frozen ? 1 : nil }.count
     }
 
     var learnedCountThisWeek: Int {
         let (start, end) = periodRange
-        return logs.keys.filter { $0 >= start && $0 < end }
-            .filter { logs[$0] == .learned }.count
+        return logsByKey
+            .compactMap { (k, v) -> (Date, DayState)? in
+                guard let d = date(fromDayKey: k) else { return nil }
+                return (d, v)
+            }
+            .filter { $0.0 >= start && $0.0 < end && $0.1 == .learned }
+            .count
     }
 
     var frozenCountThisPeriod: Int {
         let (start, end) = periodRange
-        return logs.keys.filter { $0 >= start && $0 < end }
-            .filter { logs[$0] == .frozen }.count
+        return logsByKey
+            .compactMap { (k, v) -> (Date, DayState)? in
+                guard let d = date(fromDayKey: k) else { return nil }
+                return (d, v)
+            }
+            .filter { $0.0 >= start && $0.0 < end && $0.1 == .frozen }
+            .count
     }
 
     var freezesLeft: Int { max(0, periodFreezeLimit - frozenCountThisPeriod) }
@@ -109,7 +138,8 @@ final class ActivityViewModel {
     }
 
     func state(for date: Date) -> DayState {
-        logs[date] ?? .none
+        let key = dayKey(for: date)
+        return logsByKey[key] ?? .none
     }
 
     func select(_ date: Date?) {
@@ -145,8 +175,8 @@ final class ActivityViewModel {
     }
 
     private func set(_ state: DayState, for date: Date) {
-        let d = cal.startOfDay(for: date)
-        logs[d] = state
+        let key = dayKey(for: date)
+        logsByKey[key] = state
         save()
     }
 
@@ -158,7 +188,7 @@ final class ActivityViewModel {
         var count = 0
         var cursor = today
         while true {
-            let state = logs[cursor] ?? .none
+            let state = self.state(for: cursor)
             if state == .none { break }
             count += 1
             guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
@@ -169,10 +199,10 @@ final class ActivityViewModel {
 
     // MARK: - Persistence
     private func save() {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withFullDate]
-        let dict = Dictionary(uniqueKeysWithValues: logs.map { (iso.string(from: $0.key), $0.value.rawValue) })
+        // Persist as [String: String]
+        let dict = Dictionary(uniqueKeysWithValues: logsByKey.map { ($0.key, $0.value.rawValue) })
         UserDefaults.standard.set(dict, forKey: "activity.logs")
+
         if let last = lastLogAt {
             UserDefaults.standard.set(last.timeIntervalSince1970, forKey: "activity.lastLogAt")
         } else {
@@ -180,17 +210,36 @@ final class ActivityViewModel {
         }
     }
 
+    /// Clear all activity so a new/changed goal starts fresh
+    func resetForNewGoal() {
+        logsByKey.removeAll()
+        lastLogAt = nil
+        UserDefaults.standard.removeObject(forKey: "activity.logs")
+        UserDefaults.standard.removeObject(forKey: "activity.lastLogAt")
+        save()
+    }
+
+    /// If a goal title exists but no creation timestamp was stored yet,
+    /// treat this as the first goal creation and start with a clean slate.
+    func ensureFreshAfterFirstGoal() {
+        let hasTitle = UserDefaults.standard.string(forKey: "activity.goalTitle") != nil
+        let created = UserDefaults.standard.double(forKey: "activity.goalCreatedAt")
+        if hasTitle && created == 0 {
+            resetForNewGoal()
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "activity.goalCreatedAt")
+        }
+    }
+
     private func load() {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withFullDate]
         if let dict = UserDefaults.standard.dictionary(forKey: "activity.logs") as? [String: String] {
-            var out: [Date: DayState] = [:]
+            var out: [String: DayState] = [:]
             for (k, v) in dict {
-                if let d = iso.date(from: k), let s = DayState(rawValue: v) {
-                    out[Calendar.current.startOfDay(for: d)] = s
+                if let s = DayState(rawValue: v) {
+                    out[k] = s
                 }
             }
-            logs = out
+            logsByKey = out
+
             let ts = UserDefaults.standard.double(forKey: "activity.lastLogAt")
             if ts > 0 { lastLogAt = Date(timeIntervalSince1970: ts) }
         }
@@ -222,6 +271,7 @@ struct ScreenTwo: View {
     @State private var showingMonthPicker = false
     @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var showCalendar = false
 
     var body: some View {
         ScrollView {
@@ -241,7 +291,7 @@ struct ScreenTwo: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(Color.bg.ignoresSafeArea())
+        .background(Palette.bg.ignoresSafeArea())
         .sheet(isPresented: $showingMonthPicker) {
             VStack(spacing: 12) {
                 Text("Select Month & Year")
@@ -284,15 +334,21 @@ struct ScreenTwo: View {
                     showingMonthPicker = false
                 } label: {
                     Text("Done")
+                        .glassEffect(.clear.tint(.appPrimary))
                         .font(.headline)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 10)
-                        .background(Capsule().fill(Color.selected))
+                        .background(Capsule().fill(Color.appPrimary))
                         .foregroundColor(.white)
                 }
                 .padding(.bottom, 12)
             }
             .presentationDetents([.height(340)])
+        }
+        .navigationDestination(isPresented: $showCalendar) {
+            ScreenThree()
+                .environment(vm)                       // Observation-style environment
+                .environment(\.activityVM, vm)         // keep existing key available too
         }
         .preferredColorScheme(.dark)
         .navigationBarHidden(true)
@@ -300,6 +356,8 @@ struct ScreenTwo: View {
             if !Calendar.current.isDate(vm.selectedDay, inSameDayAs: now) {
                 vm.select(now)
             }
+            // Safety net: ensure freshness in case arriving from ScreenOne
+            vm.ensureFreshAfterFirstGoal()
         }
     }
 
@@ -307,14 +365,21 @@ struct ScreenTwo: View {
         HStack {
             Text("Activity")
                 .font(.system(size: 34, weight: .bold))
-                .foregroundColor(.label)
+                .foregroundColor(Palette.label)
             Spacer()
             HStack(spacing: 14) {
-                Image(systemName: "calendar")
+                Button {
+                    showCalendar = true
+                } label: {
+                    Image(systemName: "calendar")
+                }
+                .buttonStyle(.glass)
+                .glassEffect(.regular, in: .circle)
+                .tint(.appPrimary)
                 Image(systemName: "clock.arrow.circlepath")
             }
             .font(.title2)
-            .foregroundColor(.label.opacity(0.9))
+            .foregroundColor(Palette.label.opacity(0.9))
         }
     }
 
@@ -331,23 +396,23 @@ struct ScreenTwo: View {
                     HStack(spacing: 6) {
                         Text(vm.monthTitle.uppercased())
                             .font(.headline)
-                            .foregroundColor(.label)
+                            .foregroundColor(Palette.label)
                         Image(systemName: "chevron.down")
                             .font(.caption)
-                            .foregroundColor(.label.opacity(0.9))
+                            .foregroundColor(Palette.label.opacity(0.9))
                     }
                 }
                 Spacer()
                 Button(action: vm.prevWeek) { Image(systemName: "chevron.left") }
                 Button(action: vm.nextWeek) { Image(systemName: "chevron.right") }
             }
-            .foregroundColor(.label)
+            .foregroundColor(Palette.label)
 
             HStack {
                 ForEach(weekdayShort, id: \.self) { w in
                     Text(w)
                         .font(.caption2)
-                        .foregroundColor(.label.opacity(0.7))
+                        .foregroundColor(Palette.label.opacity(0.7))
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -360,26 +425,23 @@ struct ScreenTwo: View {
                             let isSelected = Calendar.current.isDate(vm.selectedDay, inSameDayAs: date)
                             Circle()
                                 .fill(
-                                    state == .learned ? Color.learned :
-                                    state == .frozen  ? Color.frozen  :
-                                    (isSelected ? Color.frozen : Color.clear)
+                                    state == .learned ? Color.appPrimary :
+                                    state == .frozen  ? Color.appSecondary :
+                                    Color.clear
                                 )
                                 .overlay(
                                     Group {
-                                        if isSelected {
-                                            Circle().stroke(
-                                                (state == .learned ? Color.learned : state == .frozen ? Color.frozen : Color.frozen).opacity(0.9),
-                                                lineWidth: 2
-                                            )
-                                        } else if state == .none {
-                                            Circle().stroke(Color.stroke, lineWidth: 1)
+                                        if state == .none {
+                                            Circle().stroke(Palette.stroke, lineWidth: 1)
+                                        } else if isSelected {
+                                            Circle().stroke(Color.white.opacity(0.25), lineWidth: 2)
                                         }
                                     }
                                 )
                                 .frame(width: 36, height: 36)
                             Text("\(Calendar.current.component(.day, from: date))")
                                 .font(.footnote.weight(.semibold))
-                                .foregroundColor(isSelected || state != .none ? .white : .label.opacity(0.9))
+                                .foregroundColor(isSelected || state != .none ? .white : Palette.label.opacity(0.9))
                         }
                     }
                     .buttonStyle(.plain)
@@ -387,17 +449,17 @@ struct ScreenTwo: View {
                 }
             }
 
-            Divider().background(Color.stroke)
+            Divider().background(Palette.stroke)
 
             Text("Learning Activity")
                 .font(.subheadline)
-                .foregroundColor(.label)
+                .foregroundColor(Palette.label)
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.card)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.stroke))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.stroke))
         )
     }
 
@@ -411,13 +473,13 @@ struct ScreenTwo: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(isSelected ? Color.selected :
-                          state == .learned ? Color.learned :
-                          state == .frozen ? Color.frozen :
+                    .fill(isSelected ? Color.appPrimary :
+                          state == .learned ? Color.appPrimary :
+                          state == .frozen ? Color.appSecondary :
                           Color.card.opacity(0.001))
                 Text("\(Calendar.current.component(.day, from: date))")
                     .font(.footnote.weight(.semibold))
-                    .foregroundColor(isSelected || state != .none ? .white : .label.opacity(0.8))
+                    .foregroundColor(isSelected || state != .none ? .white : Palette.label.opacity(0.8))
             }
             .frame(height: 34)
         }
@@ -441,12 +503,12 @@ struct ScreenTwo: View {
             }
             Spacer(minLength: 0)
         }
-        .foregroundColor(.label)
+        .foregroundColor(Palette.label)
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18)
                 .fill(Color.card)
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.stroke))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.stroke))
         )
     }
 
@@ -457,42 +519,29 @@ struct ScreenTwo: View {
         return Button {
             vm.logLearned()
         } label: {
-            ZStack {
-                Circle()
-                    .fill(
-                        (state == .frozen || state == .learned) ? Color.clear : Color.selected
-                    )
-                    .frame(width: 270, height: 270)
-                    .overlay(
-                        Circle().stroke(
-                            state == .frozen ? Color.frozen.opacity(0.9) :
-                            state == .learned ? Color.selected.opacity(0.9) :
-                            Color.white.opacity(0.2), lineWidth: 2
-                        )
-                    )
-
-                VStack(spacing: 6) {
-                    if state == .none {
-                        Text("Log as")
-                        Text("Learned")
-                    } else if state == .learned {
-                        Text("Learned")
-                        Text("Today")
-                    } else if state == .frozen {
-                        Text("Day")
-                        Text("Freezed")
-                    }
-                }
-                .font(.system(size: 32, weight: .bold))
-                .foregroundColor(
-                    state == .frozen ? Color.frozen :
-                    state == .learned ? Color.selected :
-                    .white
-                )
-            }
-            .opacity(enabled ? 1.0 : 0.95)
+            Text(
+                state == .none ? "Log as\nLearned" :
+                state == .learned ? "Learned\nToday" :
+                "Day\nFreezed"
+            )
+            .multilineTextAlignment(.center)
+            .font(.system(size: 32, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 270, height: 270)
+            .contentShape(Circle())
         }
+        .buttonStyle(.glass)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .tint(.appPrimary)
+        .overlay(
+            Circle().stroke(
+                state == .learned ? Color.appPrimary.opacity(0.9) :
+                state == .frozen  ? Color.appSecondary.opacity(0.9) :
+                Color.white.opacity(0.18), lineWidth: 2
+            ).frame(width: 270, height: 270)
+        )
         .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.95)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.top, 6)
     }
@@ -506,15 +555,13 @@ struct ScreenTwo: View {
         } label: {
             Text("Log as Freezed")
                 .font(.headline)
-                .foregroundColor(.white)
-                .padding(.vertical, 14)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .background(
-                    Capsule().fill(
-                        canFreeze ? Color.freezeBtn : Color.card
-                    )
-                )
+                .frame(height: 52)
         }
+        .buttonStyle(.glass)
+        .glassEffect(.regular, in: Capsule())
+        .tint(canFreeze ? .appSecondary : Color.card)
         .disabled(!canFreeze)
     }
 
