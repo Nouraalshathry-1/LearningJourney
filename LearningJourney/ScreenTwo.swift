@@ -271,6 +271,7 @@ struct ScreenTwo: View {
     @State private var pickerMonth: Int = Calendar.current.component(.month, from: Date())
     @State private var pickerYear: Int = Calendar.current.component(.year, from: Date())
     @State private var showCalendar = false
+    @State private var showEditGoal = false
 
     var body: some View {
         ScrollView {
@@ -347,6 +348,10 @@ struct ScreenTwo: View {
                 .environment(vm)                       // Observation-style environment
                 .environment(\.activityVM, vm)         // keep existing key available too
         }
+        .navigationDestination(isPresented: $showEditGoal) {
+            ScreenFour()
+                .environment(\.activityVM, vm)
+        }
         .preferredColorScheme(.dark)
         .navigationBarHidden(true)
         .onReceive(minuteTimer) { now in
@@ -371,9 +376,17 @@ struct ScreenTwo: View {
                     Image(systemName: "calendar")
                 }
                 .buttonStyle(.glass)
-                .glassEffect(.regular, in: .circle)
+                .glassEffect(.regular.interactive(), in: .circle)
                 .tint(.appPrimary)
-                Image(systemName: "clock.arrow.circlepath")
+
+                Button {
+                    showEditGoal = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.glass)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .tint(.appPrimary)
             }
             .font(.title2)
             .foregroundColor(Palette.label.opacity(0.9))
@@ -406,14 +419,14 @@ struct ScreenTwo: View {
                 Image(systemName: "chevron.left")
             }
             .buttonStyle(.glass)
-            .glassEffect(.regular, in: .circle)
+            .glassEffect(.regular.interactive(), in: .circle)
             .tint(.appPrimary)
 
             Button(action: vm.nextWeek) {
                 Image(systemName: "chevron.right")
             }
             .buttonStyle(.glass)
-            .glassEffect(.regular, in: .circle)
+            .glassEffect(.regular.interactive(), in: .circle)
             .tint(.appPrimary)
         }
     }
@@ -447,6 +460,7 @@ struct ScreenTwo: View {
         var body: some View {
             Button {
                 vm.select(date)
+                vm.month = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: date)) ?? vm.month
             } label: {
                 ZStack {
                     let state = vm.state(for: date)
@@ -572,8 +586,8 @@ struct ScreenTwo: View {
             .contentShape(Circle())
         }
         .buttonStyle(.glass)
-        .glassEffect(.regular, in: Circle())
-        .tint(.appPrimary)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .tint(state == .learned ? .appCircle : .appPrimary)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.95)
         .frame(maxWidth: .infinity, alignment: .center)
@@ -594,8 +608,8 @@ struct ScreenTwo: View {
                 .frame(height: 52)
         }
         .buttonStyle(.glass)
-        .glassEffect(.regular, in: Capsule())
-        .tint(canFreeze ? .appSecondary : Color.card)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .tint(state == .frozen ? .appCon : .appSecondary)
         .disabled(!canFreeze)
     }
 
