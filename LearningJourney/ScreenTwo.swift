@@ -380,77 +380,108 @@ struct ScreenTwo: View {
         }
     }
 
+    // MARK: - Calendar card broken into smaller helpers (avoids type-check timeout)
+    private var calendarHeader: some View {
+        HStack {
+            Button {
+                // seed picker with current selected month/year
+                let comp = Calendar.current.dateComponents([.year, .month], from: vm.selectedDay)
+                pickerMonth = comp.month ?? pickerMonth
+                pickerYear  = comp.year  ?? pickerYear
+                showingMonthPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text(vm.monthTitle.uppercased())
+                        .font(.headline)
+                        .foregroundColor(Palette.label)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(Palette.label.opacity(0.9))
+                }
+            }
+
+            Spacer()
+
+            Button(action: vm.prevWeek) {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.glass)
+            .glassEffect(.regular, in: .circle)
+            .tint(.appPrimary)
+
+            Button(action: vm.nextWeek) {
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.glass)
+            .glassEffect(.regular, in: .circle)
+            .tint(.appPrimary)
+        }
+    }
+
+    private var weekdayRow: some View {
+        HStack {
+            ForEach(weekdayShort, id: \.self) { w in
+                Text(w)
+                    .font(.caption2)
+                    .foregroundColor(Palette.label.opacity(0.7))
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var weekStrip: some View {
+        HStack(spacing: 12) {
+            ForEach(vm.weekDays(containing: vm.selectedDay), id: \.self) { date in
+                DayButton(date: date)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    // Small reusable day button view to reduce expression complexity
+    private struct DayButton: View {
+        @Environment(\.activityVM) var vm
+        let date: Date
+        private let cal = Calendar.current
+
+        var body: some View {
+            Button {
+                vm.select(date)
+            } label: {
+                ZStack {
+                    let state = vm.state(for: date)
+                    let isSelected = cal.isDate(vm.selectedDay, inSameDayAs: date)
+
+                    Circle()
+                        .fill(
+                            state == .learned ? Color.appPrimary :
+                            state == .frozen  ? Color.appCon :
+                            (isSelected ? Color.appPrimary : Color.clear)
+                        )
+                        .frame(width: 36, height: 36)
+
+                    if state == .none && !isSelected {
+                        Circle().stroke(Palette.stroke, lineWidth: 1).frame(width: 36, height: 36)
+                    } else if isSelected {
+                        Circle().stroke(Color.white.opacity(0.25), lineWidth: 2).frame(width: 36, height: 36)
+                    }
+
+                    Text("\(Calendar.current.component(.day, from: date))")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(isSelected || state != .none ? .white : Palette.label.opacity(0.9))
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private var calendarCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Button {
-                    // seed picker with current selected month/year
-                    let comp = Calendar.current.dateComponents([.year, .month], from: vm.selectedDay)
-                    pickerMonth = comp.month ?? pickerMonth
-                    pickerYear  = comp.year  ?? pickerYear
-                    showingMonthPicker = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(vm.monthTitle.uppercased())
-                            .font(.headline)
-                            .foregroundColor(Palette.label)
-                        Image(systemName: "chevron.down")
-                            .font(.caption)
-                            .foregroundColor(Palette.label.opacity(0.9))
-                    }
-                }
-                Spacer()
-                Button(action: vm.prevWeek) { Image(systemName: "chevron.left") }
-                    .buttonStyle(.glass)
-                    .glassEffect(.regular, in: .circle)
-                    .tint(.appPrimary)
-                Button(action: vm.nextWeek) { Image(systemName: "chevron.right") }
-                    .buttonStyle(.glass)
-                    .glassEffect(.regular, in: .circle)
-                    .tint(.appPrimary)
-            }
-            .foregroundColor(Palette.label)
+            calendarHeader
 
-            HStack {
-                ForEach(weekdayShort, id: \.self) { w in
-                    Text(w)
-                        .font(.caption2)
-                        .foregroundColor(Palette.label.opacity(0.7))
-                        .frame(maxWidth: .infinity)
-                }
-            }
+            weekdayRow
 
-            HStack(spacing: 12) {
-                ForEach(vm.weekDays(containing: vm.selectedDay), id: \.self) { date in
-                    Button { vm.select(date) } label: {
-                        ZStack {
-                            let state = vm.state(for: date)
-                            let isSelected = Calendar.current.isDate(vm.selectedDay, inSameDayAs: date)
-                            Circle()
-                                .fill(
-                                    state == .learned ? Color.appPrimary :
-                                    state == .frozen  ? Color.appSecondary :
-                                    Color.clear
-                                )
-                                .overlay(
-                                    Group {
-                                        if state == .none {
-                                            Circle().stroke(Palette.stroke, lineWidth: 1)
-                                        } else if isSelected {
-                                            Circle().stroke(Color.white.opacity(0.25), lineWidth: 2)
-                                        }
-                                    }
-                                )
-                                .frame(width: 36, height: 36)
-                            Text("\(Calendar.current.component(.day, from: date))")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundColor(isSelected || state != .none ? .white : Palette.label.opacity(0.9))
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
-                }
-            }
+            weekStrip
 
             Divider().background(Palette.stroke)
 
@@ -460,7 +491,7 @@ struct ScreenTwo: View {
                     .foregroundColor(Palette.label)
 
                 HStack(spacing: 12) {
-                    metricBadge(bg: .appCircle, icon: "flame.fill", value: vm.learnedCountThisWeek, label: "Days Learned")
+                    metricBadge(bg: .appCircle, icon: "flame.fill", value: vm.learnedCountThisWeek, label: "Days Learned", iconColor: .appPrimary)
                     metricBadge(bg: .appCon, icon: "cube.fill", value: vm.frozenCountThisPeriod, label: "Days Freezed", iconColor: .appCon)
                 }
             }
@@ -595,9 +626,11 @@ struct ScreenTwo: View {
     }
 
     // Helper for colored metric badges in calendarCard
-    private func metricBadge(bg: Color, icon: String, value: Int, label: String) -> some View {
+    private func metricBadge(bg: Color, icon: String, value: Int, label: String, iconColor: Color = .white) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.title3).foregroundStyle(.white)
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(iconColor)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(value)").font(.headline.weight(.bold)).foregroundStyle(.white)
                 Text("\(value == 1 ? "Day" : "Days") \(label.split(separator: " ").last!)")
